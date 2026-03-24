@@ -2,10 +2,6 @@
 
 A modern web application for optimizing waste collection routes using real-time bin fill levels and vehicle capacity constraints.
 
-[🌐 View How It Works (Deployed Frontend)](https://smart-waste-management-flame.vercel.app/)
-
-![Smart Waste Management System](frontend/public/homescreen.jpeg)
-
 ## 🌟 Features
 
 - **Interactive Map Interface**
@@ -193,7 +189,7 @@ This project is licensed under the MIT License.
 
 ## 👥 Authors
 
-- Pratham Singh - Initial work - [PrathamS1](https://github.com/prathams1)
+- sakshi rawat - Initial work - [sakshirwt](https://github.com/sakshirwt15)
 
 ## 🙏 Acknowledgments
 
