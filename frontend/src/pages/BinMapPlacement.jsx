@@ -6,15 +6,19 @@ import VehicleControlPanel from "../components/VehicleControlPanel";
 import Dashboard from "../components/Dashboard";
 import RouteDetails from "../components/RouteDetails";
 import LimitationsModal from "../components/LimitationsModal";
-import { fetchOptimizedRoute, sendOptimizationSetup, fetchBinById } from "../utils/api";
-import toast, { Toaster } from 'react-hot-toast';
+import {
+  fetchOptimizedRoute,
+  sendOptimizationSetup,
+  fetchBinById,
+} from "../utils/api";
+import toast, { Toaster } from "react-hot-toast";
 
 const BinPlacement = () => {
   const [startLocationCallback, setStartLocationCallback] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   const [startLocation, setStartLocation] = useState(null);
   const [bins, setBins] = useState([]);
-  const [cityCenter, setCityCenter] = useState([28.6139, 77.209]);
+  const [cityCenter, setCityCenter] = useState([30.3165, 78.0322]);
   const [activePanel, setActivePanel] = useState("bins");
   const [routes, setRoutes] = useState([]);
   const [routeBins, setRouteBins] = useState([]);
@@ -25,7 +29,7 @@ const BinPlacement = () => {
 
   const fetchRouteBins = async (routeData) => {
     try {
-      const orderedBinIds = routeData.flatMap(route => route.route_bin_ids);
+      const orderedBinIds = routeData.flatMap((route) => route.route_bin_ids);
       console.log("Ordered bin IDs:", orderedBinIds);
 
       const fetchedBins = [];
@@ -55,7 +59,7 @@ const BinPlacement = () => {
     try {
       const res = await fetchOptimizedRoute();
       console.log("Raw optimized routes data:", res);
-      
+
       if (res && res.routes) {
         console.log("Setting routes:", res.routes);
         setRoutes(res.routes);
@@ -90,7 +94,7 @@ const BinPlacement = () => {
             format: "json",
             limit: 1,
           },
-        }
+        },
       );
       console.log("Search response for", cityName, res.data);
 
@@ -128,13 +132,13 @@ const BinPlacement = () => {
         (
           Math.random() * (bounds.maxLat - bounds.minLat) +
           bounds.minLat
-        ).toFixed(6)
+        ).toFixed(6),
       ),
       lng: parseFloat(
         (
           Math.random() * (bounds.maxLng - bounds.minLng) +
           bounds.minLng
-        ).toFixed(6)
+        ).toFixed(6),
       ),
       fill: fillMode === "auto" ? Math.floor(Math.random() * 101) : 0,
     }));
@@ -144,7 +148,7 @@ const BinPlacement = () => {
 
   const updateBinFill = (id, newFill) => {
     const updated = bins.map((bin) =>
-      bin.id === id ? { ...bin, fill: newFill } : bin
+      bin.id === id ? { ...bin, fill: newFill } : bin,
     );
     setBins(updated);
   };
@@ -166,24 +170,24 @@ const BinPlacement = () => {
 
   return (
     <div className="min-h-screen bg-zinc-900 text-zinc-100 p-4">
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           style: {
-            background: '#1F2937',
-            color: '#fff',
-            border: '1px solid #374151',
+            background: "#1F2937",
+            color: "#fff",
+            border: "1px solid #374151",
           },
           success: {
             iconTheme: {
-              primary: '#10B981',
-              secondary: '#fff',
+              primary: "#10B981",
+              secondary: "#fff",
             },
           },
           error: {
             iconTheme: {
-              primary: '#EF4444',
-              secondary: '#fff',
+              primary: "#EF4444",
+              secondary: "#fff",
             },
           },
         }}
@@ -193,7 +197,9 @@ const BinPlacement = () => {
           {/* Map Section */}
           <div className="lg:w-[65%] bg-zinc-800 rounded-xl shadow-2xl overflow-hidden">
             <div className="p-4 border-b border-zinc-700">
-              <h2 className="text-2xl font-bold text-teal-400">Smart Waste Collection Map</h2>
+              <h2 className="text-2xl font-bold text-teal-400">
+                Smart Waste Management App
+              </h2>
             </div>
             <BinMap
               center={cityCenter}
@@ -263,8 +269,8 @@ const BinPlacement = () => {
 
         {/* Route Details Section */}
         <div className="mt-6">
-          <RouteDetails 
-            routes={routes} 
+          <RouteDetails
+            routes={routes}
             routeBins={routeBins}
             onRouteSelect={setSelectedRouteIndex}
           />
@@ -282,19 +288,35 @@ const BinPlacement = () => {
             onClick={fetchOptimizedRoutes}
             disabled={isSimulating}
             className={`px-8 py-4 bg-gradient-to-r from-zinc-200 to-teal-400 text-zinc-900 font-semibold rounded-xl shadow-lg hover:shadow-zinc-500/30 transition-all duration-200 hover:scale-105 flex items-center gap-2 ${
-              isSimulating ? 'opacity-75 cursor-not-allowed' : ''
+              isSimulating ? "opacity-75 cursor-not-allowed" : ""
             }`}
           >
             {isSimulating ? (
               <>
-                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <svg
+                  className="animate-spin h-5 w-5 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
                 </svg>
                 Running Simulation...
               </>
             ) : (
-              'Run Simulation'
+              "Run Simulation"
             )}
           </button>
         </div>
