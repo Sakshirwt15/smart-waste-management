@@ -6,7 +6,6 @@ const socket = io("http://localhost:5173");
 
 export default function AlertListener() {
   useEffect(() => {
-    // Listen for bin anomaly alerts from backend
     socket.on("bin_alert", (data) => {
       const { alert_type, message, bin_label } = data;
 
@@ -65,5 +64,5 @@ export default function AlertListener() {
     };
   }, []);
 
-  return null; // invisible component
+  return null;
 }
