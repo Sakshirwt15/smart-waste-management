@@ -1,9 +1,60 @@
-import React from 'react';
+import React, { useEffect, useState } from "react";
+import { io } from "socket.io-client";
+import toast from "react-hot-toast";
 
-const RouteDetails = ({ routes, routeBins }) => {
-  console.log("Route bins:", routeBins);
-  console.log("Routes:", routes);
-  if (!routes || routes.length === 0) {
+const socket = io("http://localhost:5000");
+
+const RouteDetails = ({ routes = [], onRoutesUpdated }) => {
+  const [liveRoutes, setLiveRoutes] = useState(routes);
+  const [isRerouting, setIsRerouting] = useState(false);
+
+  // Sync with parent routes prop
+  useEffect(() => {
+    setLiveRoutes(routes);
+  }, [routes]);
+
+  // Listen for live re-optimized routes from backend
+  useEffect(() => {
+    socket.on("routes_updated", (data) => {
+      if (data.triggered_by === "citizen_report") {
+        setIsRerouting(false);
+        setLiveRoutes(data.routes);
+
+        // Notify parent if needed
+        if (onRoutesUpdated) onRoutesUpdated(data.routes);
+
+        toast.success("🗺️ Routes re-optimized based on citizen report!", {
+          duration: 4000,
+          style: {
+            background: "#F0FDF4",
+            color: "#166534",
+            border: "1px solid #86EFAC",
+          },
+        });
+      }
+    });
+
+    // Show spinner while rerouting
+    socket.on("citizen_report", () => {
+      setIsRerouting(true);
+    });
+
+    return () => {
+      socket.off("routes_updated");
+      socket.off("citizen_report");
+    };
+  }, []);
+
+  // Helper: fill color
+  const fillColor = (fill) => {
+    if (fill >= 90) return "bg-red-100 text-red-700";
+    if (fill >= 75) return "bg-orange-100 text-orange-700";
+    if (fill >= 60) return "bg-yellow-100 text-yellow-700";
+    return "bg-green-100 text-green-700";
+  };
+
+  // No routes state
+  if (!liveRoutes.length) {
     return (
       <div className="p-6">
         <div className="bg-gray-700/50 rounded-lg p-6 text-center">
@@ -15,141 +66,186 @@ const RouteDetails = ({ routes, routeBins }) => {
 
   return (
     <div className="p-6">
+      {/* Re-routing banner */}
+      {isRerouting && (
+        <div
+          className="mb-4 px-4 py-3 bg-blue-500/20 border border-blue-400/30 
+                        rounded-lg flex items-center gap-3 text-blue-300 text-sm"
+        >
+          <span className="animate-spin text-lg">⏳</span>
+          <span>Re-optimizing routes based on citizen report...</span>
+        </div>
+      )}
+
       <div className="space-y-4">
-        {routes.map((route, index) => (
-          <div
-            key={index}
-            className="bg-gray-700/50 rounded-lg p-6 transition-all duration-200 hover:bg-gray-700/70"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold text-teal-400">Route {index + 1}</h3>
-              <span className="px-3 py-1 bg-teal-500/20 text-teal-400 rounded-full text-sm">
-                Vehicle {route.vehicle_id}
-              </span>
-            </div>
+        {liveRoutes.map((route, index) => {
+          // Support both old and new field names
+          const license =
+            route.license || route.vehicle_license || "Unknown Vehicle";
+          const distanceKm =
+            route.total_distance_km ?? route.total_distance ?? 0;
+          const timeMin = route.total_time_min ?? route.estimated_time_min ?? 0;
+          const collectedFill = route.collected_fill ?? route.load_percent ?? 0;
+          const waypoints = route.waypoints || [];
+          const routeBinIds = route.route_bin_ids || route.route || [];
+          const binsCount = route.bins_count ?? routeBinIds.length ?? 0;
+          const skipped = route.skipped || [];
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+          // Highest fill bin in this route
+          const maxFill = waypoints.length
+            ? Math.max(
+                ...waypoints
+                  .filter((w) => w.type === "bin")
+                  .map((w) => w.fill || 0),
+              )
+            : 0;
+
+          return (
+            <div
+              key={index}
+              className="bg-gray-700/50 rounded-lg p-6 transition-all 
+                         duration-200 hover:bg-gray-700/70"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-teal-400">
+                  Route {index + 1}
+                </h3>
                 <div className="flex items-center gap-2">
-                  <svg
-                    className="w-5 h-5 text-teal-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 10V3L4 14h7v7l9-11h-7z"
-                    />
-                  </svg>
-                  <span className="text-gray-300">Total Distance:</span>
-                  <span className="text-white font-medium">
-                    {((route.total_distance) / 1000).toFixed(2)} km
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <svg
-                    className="w-5 h-5 text-teal-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                    />
-                  </svg>
-                  <span className="text-gray-300">Collected Fill:</span>
-                  <span className="text-white font-medium">
-                    {route.collected_fill.toFixed(2)} kg
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <svg
-                    className="w-5 h-5 text-teal-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                    />
-                  </svg>
-                  <span className="text-gray-300">License:</span>
-                  <span className="text-white font-medium">{route.license}</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <svg
-                    className="w-5 h-5 text-teal-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                  <span className="text-gray-300">Bins:</span>
-                  <span className="text-white font-medium">
-                    {route.route_bin_ids.length}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-gray-600">
-              <h4 className="text-sm font-medium text-gray-400 mb-2">Bin Sequence:</h4>
-              {/* <div className="flex flex-wrap gap-2">
-                {route.route_bin_ids.map((binId, binIndex) => (
-                  <span
-                    key={binId}
-                    className="px-2 py-1 bg-gray-600 text-gray-200 rounded text-sm"
-                  >
-                    Bin {binId}
-                  </span>
-                ))}
-              </div> */}
-              <div className="flex flex-wrap gap-2">
-                {route.route_bin_ids.map((binId, binIndex) => {
-                  const binData = routeBins[binIndex]; // Get the bin at the current index
-                  return (
+                  {/* Priority badge */}
+                  {maxFill >= 90 && (
                     <span
-                      key={binId}
-                      className="px-2 py-1 bg-gray-600 text-gray-200 rounded text-sm"
+                      className="px-2 py-0.5 bg-red-500/20 text-red-400 
+                                     rounded-full text-xs font-medium"
                     >
-                      Bin ID: {binData?.bin_id ?? "N/A"} (Index: {binIndex})
+                      🔴 Critical bins
                     </span>
-                  );
-                })}
+                  )}
+                  {maxFill >= 75 && maxFill < 90 && (
+                    <span
+                      className="px-2 py-0.5 bg-orange-500/20 text-orange-400 
+                                     rounded-full text-xs font-medium"
+                    >
+                      🟠 High priority
+                    </span>
+                  )}
+                  <span
+                    className="px-3 py-1 bg-teal-500/20 text-teal-400 
+                                   rounded-full text-sm"
+                  >
+                    {license}
+                  </span>
+                </div>
               </div>
 
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-300">🛣️ Distance:</span>
+                    <span className="text-white font-medium">
+                      {Number(distanceKm).toFixed(2)} km
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-300">⏱️ Est. Time:</span>
+                    <span className="text-white font-medium">
+                      {Number(timeMin).toFixed(1)} min
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-300">📦 Load:</span>
+                    <span className="text-white font-medium">
+                      {Number(collectedFill).toFixed(1)}%
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-300">📍 Bins:</span>
+                    <span className="text-white font-medium">{binsCount}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Route order — waypoints with fill levels */}
+              {waypoints.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-600">
+                  <h4 className="text-sm font-medium text-gray-400 mb-2">
+                    🗺️ Optimized Route Order:
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {waypoints.map((wp, wpIdx) => (
+                      <div key={wpIdx} className="flex items-center gap-1">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            wp.type === "start"
+                              ? "bg-blue-500/20 text-blue-300"
+                              : fillColor(wp.fill || 0)
+                          }`}
+                        >
+                          {wp.type === "start"
+                            ? "🚛 Start"
+                            : `🗑️ ${wp.fill || 0}%`}
+                        </span>
+                        {/* Arrow between stops */}
+                        {wpIdx < waypoints.length - 1 && (
+                          <span className="text-gray-500 text-xs">→</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Fallback: old bin sequence (if no waypoints) */}
+              {waypoints.length === 0 && routeBinIds.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-600">
+                  <h4 className="text-sm font-medium text-gray-400 mb-2">
+                    Bin Sequence:
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {routeBinIds.map((binId) => (
+                      <span
+                        key={binId}
+                        className="px-2 py-1 bg-gray-600 text-gray-200 
+                                   rounded text-sm"
+                      >
+                        Bin {binId}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Skipped bins */}
+              {skipped.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-red-400 mb-2">
+                    ⚠️ Skipped Bins:
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {skipped.map((binId) => (
+                      <span
+                        key={binId}
+                        className="px-2 py-1 bg-red-500/20 text-red-300 
+                                   rounded text-sm"
+                      >
+                        Bin {binId}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 };
 
-export default RouteDetails; 
+export default RouteDetails;

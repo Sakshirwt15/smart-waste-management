@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import BinMap from "../components/BinMap";
 import BinControlPanel from "../components/BinControlPanel";
 import axios from "axios";
@@ -6,80 +6,78 @@ import VehicleControlPanel from "../components/VehicleControlPanel";
 import Dashboard from "../components/Dashboard";
 import RouteDetails from "../components/RouteDetails";
 import LimitationsModal from "../components/LimitationsModal";
-import {
-  fetchOptimizedRoute,
-  sendOptimizationSetup,
-  fetchBinById,
-} from "../utils/api";
 import toast, { Toaster } from "react-hot-toast";
+
+const save = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+};
+const load = (key, fallback) => {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch {
+    return fallback;
+  }
+};
 
 const BinPlacement = () => {
   const [startLocationCallback, setStartLocationCallback] = useState(null);
-  const [vehicles, setVehicles] = useState([]);
-  const [startLocation, setStartLocation] = useState(null);
-  const [bins, setBins] = useState([]);
-  const [cityCenter, setCityCenter] = useState([30.3165, 78.0322]);
+  const [vehicles, setVehiclesState] = useState(() =>
+    load("swms_vehicles", []),
+  );
+  const [startLocation, setStartLocationState] = useState(() =>
+    load("swms_startLocation", null),
+  );
+  const [bins, setBinsState] = useState(() => load("swms_bins", []));
+  const [routes, setRoutesState] = useState(() => load("swms_routes", []));
+  const [cityCenter, setCityCenter] = useState(() =>
+    load("swms_cityCenter", [30.3165, 78.0322]),
+  );
   const [activePanel, setActivePanel] = useState("bins");
-  const [routes, setRoutes] = useState([]);
-  const [routeBins, setRouteBins] = useState([]);
-  const [selectedRouteIndex, setSelectedRouteIndex] = useState(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  // ── NEW: simulation key to force MLPredictionPanel refetch ──────────────
+  const [simulationVersion, setSimulationVersion] = useState(0);
 
   const mapRef = useRef();
 
-  const fetchRouteBins = async (routeData) => {
-    try {
-      const orderedBinIds = routeData.flatMap((route) => route.route_bin_ids);
-      console.log("Ordered bin IDs:", orderedBinIds);
-
-      const fetchedBins = [];
-      for (const binId of orderedBinIds) {
-        try {
-          const binData = await fetchBinById(binId);
-          console.log(`Fetched bin ${binId}:`, binData);
-          fetchedBins.push(binData);
-        } catch (error) {
-          console.error(`Failed to fetch bin ${binId}:`, error);
-        }
-      }
-
-      console.log("All fetched bins:", fetchedBins);
-      setRouteBins(fetchedBins);
-    } catch (error) {
-      console.error("Error in fetchRouteBins:", error);
-    }
+  const setBins = (val) => {
+    const next = typeof val === "function" ? val(bins) : val;
+    setBinsState(next);
+    save("swms_bins", next);
+  };
+  const setVehicles = (val) => {
+    const next = typeof val === "function" ? val(vehicles) : val;
+    setVehiclesState(next);
+    save("swms_vehicles", next);
+  };
+  const setStartLocation = (val) => {
+    setStartLocationState(val);
+    save("swms_startLocation", val);
+  };
+  const setRoutes = (val) => {
+    const next = typeof val === "function" ? val(routes) : val;
+    setRoutesState(next);
+    save("swms_routes", next);
   };
 
-  const handleSetStartLocation = (callback) => {
+  useEffect(() => {
+    save("swms_cityCenter", cityCenter);
+  }, [cityCenter]);
+  useEffect(() => {
+    setTimeout(() => {
+      if (mapRef.current) mapRef.current.setView(cityCenter, 13);
+    }, 300);
+  }, []);
+
+  const handleSetStartLocation = (callback) =>
     setStartLocationCallback(() => callback);
-  };
-
-  const fetchOptimizedRoutes = async () => {
-    setIsSimulating(true);
-    try {
-      const res = await fetchOptimizedRoute();
-      console.log("Raw optimized routes data:", res);
-
-      if (res && res.routes) {
-        console.log("Setting routes:", res.routes);
-        setRoutes(res.routes);
-        await fetchRouteBins(res.routes);
-        toast.success("Simulation completed successfully!");
-      } else {
-        console.error("Invalid route data format:", res);
-        toast.error("Failed to get optimized routes. Please try again.");
-      }
-    } catch (err) {
-      console.error("Failed to fetch route data:", err);
-      toast.error("Failed to run simulation. Please try again.");
-    } finally {
-      setIsSimulating(false);
-    }
-  };
-
   const handleMapClick = (location) => {
     if (startLocationCallback) {
       startLocationCallback(location);
+      setStartLocation(location);
       setStartLocationCallback(null);
     }
   };
@@ -89,24 +87,15 @@ const BinPlacement = () => {
       const res = await axios.get(
         "https://nominatim.openstreetmap.org/search",
         {
-          params: {
-            q: cityName,
-            format: "json",
-            limit: 1,
-          },
+          params: { q: cityName, format: "json", limit: 1 },
         },
       );
-      console.log("Search response for", cityName, res.data);
-
       if (res.data.length > 0) {
         const { lat, lon } = res.data[0];
         const newCenter = [parseFloat(lat), parseFloat(lon)];
         setCityCenter(newCenter);
-
         setTimeout(() => {
-          if (mapRef.current) {
-            mapRef.current.setView(newCenter, 13);
-          }
+          if (mapRef.current) mapRef.current.setView(newCenter, 13);
         }, 100);
       } else {
         alert("City not found.");
@@ -124,9 +113,8 @@ const BinPlacement = () => {
       minLng: cityCenter[1] - 0.02,
       maxLng: cityCenter[1] + 0.02,
     };
-
     const newBins = Array.from({ length: num }, (_, i) => ({
-      city_id: cityCenter,
+      city_id: "city1",
       id: bins.length + i + 1,
       lat: parseFloat(
         (
@@ -142,30 +130,158 @@ const BinPlacement = () => {
       ),
       fill: fillMode === "auto" ? Math.floor(Math.random() * 101) : 0,
     }));
-
     setBins([...bins, ...newBins]);
   };
 
   const updateBinFill = (id, newFill) => {
-    const updated = bins.map((bin) =>
-      bin.id === id ? { ...bin, fill: newFill } : bin,
+    setBins((prev) =>
+      prev.map((bin) => (bin.id === id ? { ...bin, fill: newFill } : bin)),
     );
-    setBins(updated);
   };
 
+  const handleClearAll = () => {
+    setBins([]);
+    setVehicles([]);
+    setStartLocation(null);
+    setRoutes([]);
+    toast("🗑️ All data cleared", { icon: "🧹" });
+  };
+
+  // ── FIX: shared helper to save bins+vehicles to backend ─────────────────
+  const saveToBackend = async (binsToSave, vehiclesToSave) => {
+    const formattedBins = binsToSave.map((bin) => ({
+      bin_id: String(bin.id),
+      city_id: "city1",
+      latitude: bin.lat,
+      longitude: bin.lng,
+      capacity: 100,
+      fill_percentage: bin.fill,
+    }));
+    const formattedVehicles = vehiclesToSave.map((vehicle, index) => ({
+      city_id: "city1",
+      vehicle_license: `VEH-${index + 1}`,
+      load_capacity: vehicle.capacity,
+      latitude: startLocation.lat,
+      longitude: startLocation.lng,
+      current_load: 0,
+      assigned_bins: [],
+      status: "available",
+    }));
+
+    const response = await fetch("http://localhost:5000/api/optimize/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bins: formattedBins,
+        vehicles: formattedVehicles,
+        start_location: {
+          latitude: startLocation.lat,
+          longitude: startLocation.lng,
+        },
+      }),
+    });
+    if (!response.ok) throw new Error("Failed to save");
+    return formattedBins;
+  };
+
+  // ── FIX: retrain ML after saving new bins ────────────────────────────────
+  const retrainML = async () => {
+    const trainRes = await fetch("http://localhost:5000/api/train/all", {
+      method: "POST",
+    });
+    if (!trainRes.ok) throw new Error("Training failed");
+  };
+
+  // ── 💾 Add Data ──────────────────────────────────────────────────────────
   const handleSimulationClick = async () => {
-    try {
-      const response = await sendOptimizationSetup({
-        bins,
-        vehicles,
-        startLocation,
-      });
-      console.log("Server response:", response);
-      toast.success("Data added successfully!");
-    } catch (error) {
-      console.error("Optimization setup failed:", error);
-      toast.error("Failed to add data. Please try again.");
+    if (bins.length === 0) {
+      toast.error("Please add bins first!");
+      return;
     }
+    if (vehicles.length === 0) {
+      toast.error("Please add vehicles first!");
+      return;
+    }
+    if (!startLocation) {
+      toast.error("Please set start location first!");
+      return;
+    }
+
+    try {
+      await saveToBackend(bins, vehicles);
+      toast.success(
+        `✅ ${bins.length} bins & ${vehicles.length} vehicles saved!`,
+      );
+
+      // ── FIX: retrain with new bins ──────────────────────────────────────
+      toast("🤖 Training ML models with new bins...", {
+        icon: "⏳",
+        duration: 3000,
+      });
+      await retrainML();
+      toast.success("🤖 ML models retrained!");
+
+      await fetch("http://localhost:5000/api/alerts/train", { method: "POST" });
+
+      // ── FIX: bump version so MLPredictionPanel refetches ────────────────
+      setSimulationVersion((v) => v + 1);
+    } catch {
+      toast.error("Failed to save data. Is backend running?");
+    }
+  };
+
+  // ── ▶ Run Simulation ─────────────────────────────────────────────────────
+  const fetchOptimizedRoutes = async () => {
+    if (!startLocation) {
+      toast.error("Please set start location first");
+      return;
+    }
+    if (bins.length === 0) {
+      toast.error("Please add bins first");
+      return;
+    }
+    if (vehicles.length === 0) {
+      toast.error("Please add vehicles first");
+      return;
+    }
+
+    setIsSimulating(true);
+    try {
+      // ── FIX: save fresh bins to DB ───────────────────────────────────────
+      await saveToBackend(bins, vehicles);
+      toast("📦 Data saved! Retraining ML...", { icon: "⏳", duration: 2000 });
+
+      // ── FIX: retrain before predicting & routing ─────────────────────────
+      await retrainML();
+      toast.success("🤖 ML retrained with current bins!");
+
+      // ── FIX: bump version so MLPredictionPanel refetches fresh data ──────
+      setSimulationVersion((v) => v + 1);
+
+      toast("🔁 Optimizing routes...", { icon: "⏳", duration: 2000 });
+      const routeRes = await fetch(
+        "http://localhost:5000/api/test/build-graph",
+      );
+      if (!routeRes.ok) throw new Error("Optimization failed");
+
+      const data = await routeRes.json();
+      if (data?.routes && data.routes.length > 0) {
+        setRoutes(data.routes);
+        toast.success(`✅ ${data.routes.length} routes optimized!`);
+      } else {
+        toast.error("No routes returned. Ensure bins have fill ≥ 60%.", {
+          duration: 5000,
+        });
+      }
+    } catch {
+      toast.error("Optimization failed. Check backend.");
+    } finally {
+      setIsSimulating(false);
+    }
+  };
+
+  const handleMLRoutesGenerated = (mlRoutes) => {
+    toast.success(`Smart routes generated for ${mlRoutes.length} vehicle(s)!`);
   };
 
   return (
@@ -178,70 +294,81 @@ const BinPlacement = () => {
             color: "#fff",
             border: "1px solid #374151",
           },
-          success: {
-            iconTheme: {
-              primary: "#10B981",
-              secondary: "#fff",
-            },
-          },
-          error: {
-            iconTheme: {
-              primary: "#EF4444",
-              secondary: "#fff",
-            },
-          },
+          success: { iconTheme: { primary: "#10B981", secondary: "#fff" } },
+          error: { iconTheme: { primary: "#EF4444", secondary: "#fff" } },
         }}
       />
+
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col lg:flex-row gap-6">
-          {/* Map Section */}
+          {/* Map */}
           <div className="lg:w-[65%] bg-zinc-800 rounded-xl shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-zinc-700">
+            <div className="p-4 border-b border-zinc-700 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-teal-400">
                 Smart Waste Management App
               </h2>
+              <div className="flex items-center gap-2">
+                {bins.length > 0 && (
+                  <button
+                    onClick={() => setShowHeatmap((p) => !p)}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                      showHeatmap
+                        ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30"
+                        : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
+                    }`}
+                  >
+                    🌡️ {showHeatmap ? "Hide Heatmap" : "Show Heatmap"}
+                  </button>
+                )}
+                {(bins.length > 0 || routes.length > 0) && (
+                  <button
+                    onClick={handleClearAll}
+                    className="px-3 py-2 rounded-lg text-xs text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                  >
+                    🗑️ Clear
+                  </button>
+                )}
+              </div>
             </div>
+
             <BinMap
               center={cityCenter}
               bins={bins}
               mapRef={mapRef}
-              startLocation={setStartLocation}
-              onMapClickForStart={handleMapClick}
+              startLocation={startLocation}
+              onMapClickForStart={startLocationCallback ? handleMapClick : null}
               routes={routes}
-              routeBins={routeBins}
-              selectedRouteIndex={selectedRouteIndex}
+              selectedRouteIndex={null}
+              showHeatmap={showHeatmap}
             />
+
+            {startLocationCallback && (
+              <div className="px-4 py-2 bg-yellow-500/20 border-t border-yellow-500/30 text-yellow-300 text-sm text-center animate-pulse">
+                📍 Click anywhere on the map to set vehicle start location
+              </div>
+            )}
           </div>
 
-          {/* Control Panel Section */}
+          {/* Control Panel */}
           <div className="lg:w-[35%] space-y-6">
-            {/* Panel Toggle */}
             <div className="bg-zinc-800 rounded-xl p-4 shadow-2xl">
               <div className="flex gap-3 justify-center">
-                <button
-                  onClick={() => setActivePanel("bins")}
-                  className={`px-6 py-3 rounded-lg text-lg font-semibold transition-all duration-200 ${
-                    activePanel === "bins"
-                      ? "bg-teal-600 text-white shadow-lg shadow-teal-500/30"
-                      : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
-                  }`}
-                >
-                  Bins
-                </button>
-                <button
-                  onClick={() => setActivePanel("vehicles")}
-                  className={`px-6 py-3 rounded-lg text-lg font-semibold transition-all duration-200 ${
-                    activePanel === "vehicles"
-                      ? "bg-teal-600 text-white shadow-lg shadow-teal-500/30"
-                      : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
-                  }`}
-                >
-                  Vehicles
-                </button>
+                {["bins", "vehicles"].map((panel) => (
+                  <button
+                    key={panel}
+                    onClick={() => setActivePanel(panel)}
+                    className={`px-6 py-3 rounded-lg text-lg font-semibold transition-all duration-200 ${
+                      activePanel === panel
+                        ? "bg-teal-600 text-white shadow-lg shadow-teal-500/30"
+                        : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
+                    }`}
+                  >
+                    {panel.charAt(0).toUpperCase() + panel.slice(1)}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Control Panel Content */}
             <div className="bg-zinc-800 rounded-xl shadow-2xl overflow-hidden">
               {activePanel === "bins" ? (
                 <BinControlPanel
@@ -251,38 +378,62 @@ const BinPlacement = () => {
               ) : (
                 <VehicleControlPanel
                   onSetStartLocation={handleSetStartLocation}
-                  onAddVehicles={(vehicles) => setVehicles(vehicles)}
+                  onAddVehicles={setVehicles}
                 />
               )}
             </div>
+
+            {bins.length > 0 && (
+              <div className="bg-zinc-800 rounded-xl p-4 shadow-2xl">
+                <h3 className="text-sm font-semibold text-zinc-400 mb-3">
+                  📊 Bin Status
+                </h3>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[
+                    {
+                      label: "Low",
+                      color: "green",
+                      count: bins.filter((b) => b.fill < 60).length,
+                    },
+                    {
+                      label: "Medium",
+                      color: "yellow",
+                      count: bins.filter((b) => b.fill >= 60 && b.fill < 80)
+                        .length,
+                    },
+                    {
+                      label: "Critical",
+                      color: "red",
+                      count: bins.filter((b) => b.fill >= 80).length,
+                    },
+                  ].map(({ label, color, count }) => (
+                    <div
+                      key={label}
+                      className={`bg-${color}-500/10 rounded-lg p-2`}
+                    >
+                      <div className={`text-${color}-400 text-lg font-bold`}>
+                        {count}
+                      </div>
+                      <div className="text-xs text-zinc-400">{label}</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-zinc-500 mt-2 text-center">
+                  💾 {bins.length} bins · {vehicles.length} vehicles saved
+                  locally
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Dashboard Section */}
-        <div className="mt-6">
-          <Dashboard
-            bins={bins}
-            updateBinFill={updateBinFill}
-            vehicles={vehicles}
-          />
-        </div>
-
-        {/* Route Details Section */}
-        <div className="mt-6">
-          <RouteDetails
-            routes={routes}
-            routeBins={routeBins}
-            onRouteSelect={setSelectedRouteIndex}
-          />
-        </div>
-
         {/* Action Buttons */}
-        <div className="mt-6 flex justify-center gap-4">
+        <div className="mt-6 flex flex-wrap justify-center gap-4">
           <button
             onClick={handleSimulationClick}
             className="px-8 py-4 bg-gradient-to-r from-zinc-900 to-zinc-800 border-white border-2 text-white font-semibold rounded-xl shadow-lg hover:shadow-teal-500/30 transition-all duration-200 hover:scale-105"
           >
-            Add Data
+            💾 Add Data
           </button>
           <button
             onClick={fetchOptimizedRoutes}
@@ -294,7 +445,7 @@ const BinPlacement = () => {
             {isSimulating ? (
               <>
                 <svg
-                  className="animate-spin h-5 w-5 text-white"
+                  className="animate-spin h-5 w-5"
                   xmlns="http://www.w3.org/2000/svg"
                   fill="none"
                   viewBox="0 0 24 24"
@@ -306,21 +457,39 @@ const BinPlacement = () => {
                     r="10"
                     stroke="currentColor"
                     strokeWidth="4"
-                  ></circle>
+                  />
                   <path
                     className="opacity-75"
                     fill="currentColor"
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
+                  />
                 </svg>
                 Running Simulation...
               </>
             ) : (
-              "Run Simulation"
+              "▶ Run Simulation"
             )}
           </button>
         </div>
+
+        {/* Dashboard — pass simulationVersion so it refetches predictions */}
+        <div className="mt-6">
+          <Dashboard
+            bins={bins}
+            updateBinFill={updateBinFill}
+            vehicles={vehicles}
+            startLocation={startLocation}
+            onRoutesGenerated={handleMLRoutesGenerated}
+            simulationVersion={simulationVersion}
+            routes={routes}
+          />
+        </div>
+
+        <div className="mt-6">
+          <RouteDetails routes={routes} onRoutesUpdated={setRoutes} />
+        </div>
       </div>
+
       <LimitationsModal />
     </div>
   );

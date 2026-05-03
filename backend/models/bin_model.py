@@ -1,9 +1,12 @@
 from config.config import db
 from bson.objectid import ObjectId
 
-#& Bin Model
+
+# & Bin Model
 class Bin:
-    def __init__(self, bin_id, city_id, latitude, longitude, fill_percentage, capacity=100):
+    def __init__(
+        self, bin_id, city_id, latitude, longitude, fill_percentage, capacity=100
+    ):
         self.bin_id = bin_id
         self.city_id = city_id
         self.latitude = latitude
@@ -14,48 +17,68 @@ class Bin:
     def save(self):
         bins_collection = db.bins
         bins_collection.insert_one(self.__dict__)
-    
+
     @staticmethod
     def get_all():
         bins_collection = db.bins
-        print(list(bins_collection.find({}, {'_id':0})))
-        return list(bins_collection.find({}, {'_id':0}))
+        return list(bins_collection.find({}, {"_id": 0}))
 
     @staticmethod
     def get_by_id(bin_id):
         bins_collection = db.bins
-        print(bins_collection.find_one({'_id':ObjectId(bin_id)}, {'_id':0}))
-        return bins_collection.find_one({"_id": ObjectId(bin_id)}, {'_id':0})
-    
+        # Query by bin_id field (integer), not MongoDB's _id (ObjectId)
+        try:
+            bin_id = int(bin_id)
+        except (ValueError, TypeError):
+            return {"error": "Invalid bin_id format"}
+
+        result = bins_collection.find_one({"bin_id": bin_id}, {"_id": 0})
+
+        if not result:
+            return {"error": f"Bin {bin_id} not found"}
+
+        return result
+
     @staticmethod
     def get_by_city(city_id):
         bins_collection = db.bins
         try:
             city_id = int(city_id)
         except ValueError:
-            return {"error": "Invalid city_id format"}, 400        
-        print(f"City ID: {city_id}, Type: {type(city_id)}")
-        
+            return {"error": "Invalid city_id format"}
+
         try:
-            bins_in_city = list(bins_collection.find({"city_id": city_id}, {'_id':0}))
+            bins_in_city = list(bins_collection.find({"city_id": city_id}, {"_id": 0}))
         except Exception as e:
             print(f"Error occurred while fetching bins for city {city_id}: {e}")
-            return {"error": f"Error occurred while fetching bins for city {city_id}"}, 500
-        
+            return {"error": f"Error occurred while fetching bins for city {city_id}"}
+
         if not bins_in_city:
-            print("No bins found for this city.")
             return {"message": "No bins found for this city."}
-        
+
         return bins_in_city
-    
+
     @staticmethod
     def update_bin(bin_id, new_data):
         bins_collection = db.bins
-        bins_collection.update_one({"_id": ObjectId(bin_id)}, {"$set": new_data})
+        try:
+            bin_id = int(bin_id)
+        except (ValueError, TypeError):
+            return {"error": "Invalid bin_id format"}
+
+        # Remove _id from new_data if accidentally passed
+        new_data.pop("_id", None)
+
+        bins_collection.update_one({"bin_id": bin_id}, {"$set": new_data})
         return {"message": "Bin updated successfully"}
 
     @staticmethod
     def delete_bin(bin_id):
         bins_collection = db.bins
-        bins_collection.delete_one({"_id": ObjectId(bin_id)})
+        try:
+            bin_id = int(bin_id)
+        except (ValueError, TypeError):
+            return {"error": "Invalid bin_id format"}
+
+        bins_collection.delete_one({"bin_id": bin_id})
         return {"message": "Bin deleted successfully"}

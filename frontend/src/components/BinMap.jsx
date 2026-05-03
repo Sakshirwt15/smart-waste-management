@@ -1,192 +1,259 @@
+import { useEffect } from "react";
 import {
   MapContainer,
   TileLayer,
   Marker,
   Popup,
+  Polyline,
   useMap,
-  useMapEvent,
+  useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
-import binIconSrc from "../assets/bin.png";
-import startIconSrc from "../assets/start.png";
+import HeatmapLayer from "./HeatmapLayer";
 
-import { useEffect, useState } from "react";
-
-// Initialize Leaflet Routing Machine
-import "leaflet-routing-machine";
-
-const binIcon = new L.Icon({
-  iconUrl: binIconSrc,
-  iconSize: [35, 40],
-  iconAnchor: [17, 40],
-  popupAnchor: [0, -35],
-});
-const startIcon = new L.Icon({
-  iconUrl: startIconSrc,
-  iconSize: [30, 40],
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-const ClickHandler = ({ onMapClickForStart, setStartMarker }) => {
-  useMapEvent("click", (e) => {
-    if (onMapClickForStart) {
-      onMapClickForStart({ lat: e.latlng.lat, lng: e.latlng.lng });
-      setStartMarker({ lat: e.latlng.lat, lng: e.latlng.lng });
-    }
+function FlyToCenter({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) map.flyTo(center, 13, { duration: 1.5 });
+  }, [center, map]);
+  return null;
+}
+
+function MapClickHandler({ onMapClickForStart }) {
+  useMapEvents({
+    click(e) {
+      if (onMapClickForStart) {
+        onMapClickForStart({ lat: e.latlng.lat, lng: e.latlng.lng });
+      }
+    },
   });
   return null;
-};
+}
 
-const MapCenterer = ({ center }) => {
-  const map = useMap();
+function getBinIcon(fill) {
+  const color =
+    fill >= 80
+      ? "#EF4444"
+      : fill >= 60
+        ? "#F97316"
+        : fill >= 40
+          ? "#EAB308"
+          : "#22C55E";
 
-  useEffect(() => {
-    if (center) {
-      map.setView(center, map.getZoom());
-    }
-  }, [center, map]);
+  // Trash can SVG icon
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="display:flex;flex-direction:column;align-items:center;">
+        <svg width="28" height="32" viewBox="0 0 24 24" fill="${color}" 
+             xmlns="http://www.w3.org/2000/svg"
+             style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5))">
+          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6h14zM10 11v6M14 11v6" 
+                stroke="white" stroke-width="1.5" stroke-linecap="round" 
+                fill="none"/>
+          <rect x="5" y="6" width="14" height="2" rx="1" fill="${color}"/>
+          <path d="M6 8l1 12h10l1-12H6z" fill="${color}"/>
+        </svg>
+        <div style="
+          width:8px;height:8px;
+          background:${color};
+          border-radius:50%;
+          margin-top:-2px;
+          border:1px solid white;
+        "></div>
+      </div>
+    `,
+    iconSize: [28, 40],
+    iconAnchor: [14, 40],
+    popupAnchor: [0, -40],
+  });
+}
 
-  return null;
-};
-
-// Routing Control Component
-const RoutingControl = ({ positions, color, routeInfo }) => {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!positions || positions.length < 2) return;
-
-    // Create routing control
-    const routingControl = L.Routing.control({
-      waypoints: positions.map(pos => L.latLng(pos[0], pos[1])),
-      routeWhileDragging: false,
-      show: false,
-      addWaypoints: false,
-      draggableWaypoints: false,
-      fitSelectedRoutes: false,
-      lineOptions: {
-        styles: [{ color, weight: 8, opacity: 0.7 }]
-      },
-      createMarker: () => null, // Don't create markers for waypoints
-      router: L.Routing.osrmv1({
-        serviceUrl: 'https://router.project-osrm.org/route/v1'
-      })
-    }).addTo(map);
-
-    // Add popup to the route
-    routingControl.on('routesfound', (e) => {
-      const route = e.routes[0];
-      const routeLine = route.coordinates;
-      const midPoint = routeLine[Math.floor(routeLine.length / 2)];
-      
-      L.popup()
-        .setLatLng(midPoint)
-        .setContent(`
-          <div>
-            <h3 class="font-semibold">Vehicle ${routeInfo.index + 1}</h3>
-            <p>License: ${routeInfo.license}</p>
-            <p>Collected Fill: ${routeInfo.collected_fill} units</p>
-          </div>
-        `)
-        .addTo(map);
-    });
-
-    return () => {
-      map.removeControl(routingControl);
-    };
-  }, [map, positions, color, routeInfo]);
-
-  return null;
-};
-
-function BinMap({ center, bins, mapRef, onMapClickForStart, startLocation, routes, routeBins }) {
-  const [startLocationMarker, setStartLocationMarker] = useState(null);
-  console.log("City center received: " + center);
-  console.log("Start location marker received: ", startLocationMarker);
-  console.log("Routes received in BinMap:", routes);
-  console.log("Route bins received in BinMap:", routeBins);
-  startLocation(startLocationMarker);
-
-  // Function to get different colors for different routes
-  const getRouteColor = (index) => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD'];
-    return colors[index % colors.length];
-  };
-
-  // Function to create route positions
-  const createRoutePositions = () => {
-    if (!routes || !routeBins || routeBins.length === 0) {
-      console.log("No routes or route bins available");
-      return [];
-    }
-
-    return routes.map((route, index) => {
-      const positions = route.route_bin_ids.map((_, idx) => {
-        const bin = routeBins[idx];
-        return bin ? [bin.latitude, bin.longitude] : null;
-      }).filter(pos => pos !== null);
-
-      if (startLocationMarker) {
-        positions.unshift([startLocationMarker.lat, startLocationMarker.lng]);
-      }
-
-      return {
-        positions,
-        color: getRouteColor(index),
-        routeInfo: {
-          index,
-          license: route.license,
-          collected_fill: route.collected_fill
-        }
-      };
-    });
-  };
+function StartMarker({ location }) {
+  if (!location) return null;
+  const icon = L.divIcon({
+    className: "",
+    html: `
+      <div style="display:flex;flex-direction:column;align-items:center;">
+        <svg width="32" height="32" viewBox="0 0 24 24" 
+             xmlns="http://www.w3.org/2000/svg"
+             style="filter:drop-shadow(0 2px 6px rgba(59,130,246,0.8))">
+          <rect x="3" y="8" width="16" height="10" rx="2" fill="#3B82F6"/>
+          <rect x="1" y="11" width="4" height="6" rx="1" fill="#1D4ED8"/>
+          <rect x="17" y="11" width="4" height="6" rx="1" fill="#1D4ED8"/>
+          <circle cx="7" cy="19" r="2" fill="#1E293B" stroke="white" stroke-width="1"/>
+          <circle cx="15" cy="19" r="2" fill="#1E293B" stroke="white" stroke-width="1"/>
+          <rect x="9" y="6" width="8" height="6" rx="1" fill="#60A5FA"/>
+        </svg>
+        <div style="
+          width:0;height:0;
+          border-left:6px solid transparent;
+          border-right:6px solid transparent;
+          border-top:8px solid #3B82F6;
+          margin-top:-2px;
+        "></div>
+      </div>
+    `,
+    iconSize: [32, 42],
+    iconAnchor: [16, 42],
+    popupAnchor: [0, -42],
+  });
 
   return (
-    <div style={{ height: "500px", width: "100%" }}>
-      <MapContainer
-        center={center}
-        zoom={13}
-        style={{ height: "100%", width: "100%" }}
-        ref={mapRef}
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
-        />
-        <MapCenterer center={center} />
-        <ClickHandler
-          onMapClickForStart={onMapClickForStart}
-          setStartMarker={setStartLocationMarker}
-        />
-        {bins.map((bin) => (
-          <Marker key={bin.id} position={[bin.lat, bin.lng]} icon={binIcon}>
-            <Popup>
-              Bin ID: {bin.id} <br />
-              Fill: {bin.fill}%
-            </Popup>
-          </Marker>
-        ))}
-        {startLocationMarker && (
-          <Marker
-            position={[startLocationMarker.lat, startLocationMarker.lng]}
-            icon={startIcon}
-          >
-            <Popup>Start Location</Popup>
-          </Marker>
-        )}
-        {createRoutePositions().map((route, index) => (
-          <RoutingControl
-            key={`route-${index}`}
-            positions={route.positions}
-            color={route.color}
-            routeInfo={route.routeInfo}
-          />
-        ))}
-      </MapContainer>
-    </div>
+    <Marker position={[location.lat, location.lng]} icon={icon}>
+      <Popup>
+        <div className="text-sm font-semibold text-blue-700">
+          🚛 Vehicle Start Location
+          <br />
+          <span className="font-normal text-gray-600">
+            {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+          </span>
+        </div>
+      </Popup>
+    </Marker>
   );
 }
 
-export default BinMap;
+export default function BinMap({
+  center,
+  bins = [],
+  mapRef,
+  startLocation,
+  onMapClickForStart,
+  routes = [],
+  selectedRouteIndex = null,
+  showHeatmap = false,
+}) {
+  const routeColors = ["#14B8A6", "#F97316", "#A855F7", "#EAB308", "#EC4899"];
+
+  return (
+    <MapContainer
+      center={center}
+      zoom={13}
+      style={{ height: "460px", width: "100%" }}
+      ref={mapRef}
+      className={onMapClickForStart ? "cursor-crosshair" : ""}
+    >
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      />
+
+      <FlyToCenter center={center} />
+      <MapClickHandler onMapClickForStart={onMapClickForStart} />
+
+      {/* Heatmap — Feature 3 */}
+      {showHeatmap && bins.length > 0 && (
+        <HeatmapLayer
+          bins={bins.map((b) => ({
+            latitude: b.lat,
+            longitude: b.lng,
+            fill_percentage: b.fill,
+          }))}
+        />
+      )}
+
+      {/* Bin markers — trash can icons */}
+      {bins.map((bin) => (
+        <Marker
+          key={bin.id}
+          position={[bin.lat, bin.lng]}
+          icon={getBinIcon(bin.fill)}
+        >
+          <Popup>
+            <div className="text-sm min-w-[120px]">
+              <strong>🗑️ Bin #{bin.id}</strong>
+              <br />
+              Fill: <strong>{bin.fill}%</strong>
+              <br />
+              <div
+                style={{
+                  marginTop: 4,
+                  width: "100%",
+                  background: "#e5e7eb",
+                  borderRadius: 4,
+                  height: 6,
+                }}
+              >
+                <div
+                  style={{
+                    width: `${bin.fill}%`,
+                    height: 6,
+                    borderRadius: 4,
+                    background:
+                      bin.fill >= 80
+                        ? "#EF4444"
+                        : bin.fill >= 60
+                          ? "#F97316"
+                          : "#22C55E",
+                  }}
+                />
+              </div>
+              <span
+                style={{
+                  color:
+                    bin.fill >= 80
+                      ? "#EF4444"
+                      : bin.fill >= 60
+                        ? "#F97316"
+                        : "#22C55E",
+                  fontSize: 11,
+                  marginTop: 4,
+                  display: "block",
+                }}
+              >
+                {bin.fill >= 80
+                  ? "🔴 Critical — needs collection!"
+                  : bin.fill >= 60
+                    ? "🟠 High priority"
+                    : bin.fill >= 40
+                      ? "🟡 Medium"
+                      : "🟢 Low — OK"}
+              </span>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+
+      {/* Vehicle start marker — truck icon */}
+      <StartMarker location={startLocation} />
+
+      {/* Route polylines — FIXED: use latitude/longitude from backend */}
+      {routes.map((route, idx) => {
+        const waypoints = route.waypoints || [];
+
+        // FIX: backend sends latitude/longitude not lat/lng
+        const positions = waypoints
+          .filter((w) => w.latitude != null && w.longitude != null)
+          .map((w) => [w.latitude, w.longitude]);
+
+        // Need at least 2 points to draw a line
+        if (positions.length < 2) return null;
+
+        const isSelected = selectedRouteIndex === idx;
+        const isOther = selectedRouteIndex !== null && !isSelected;
+
+        return (
+          <Polyline
+            key={idx}
+            positions={positions}
+            pathOptions={{
+              color: routeColors[idx % routeColors.length],
+              weight: isSelected ? 6 : 3,
+              opacity: isOther ? 0.3 : 1,
+              dashArray: "10, 6",
+            }}
+          />
+        );
+      })}
+    </MapContainer>
+  );
+}
